@@ -1,0 +1,23 @@
+[Unit]
+Description=FLARE IPC Bridge (HTTPS)
+After=network.target flare.service
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h/FLARE/bridge/python-bridge
+Environment=FLARED_SOCKET=/tmp/flared.sock
+Environment=BRIDGE_HOST=127.0.0.1
+Environment=BRIDGE_PORT=8443
+Environment=TLS_ENABLED=true
+Environment=TLS_CERT=%h/FLARE/bridge/python-bridge/cert.pem
+Environment=TLS_KEY=%h/FLARE/bridge/python-bridge/key.pem
+Environment=MAX_CONCURRENT=200
+Environment=READ_TIMEOUT=10.0
+ExecStart=/usr/bin/python3 run.py
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

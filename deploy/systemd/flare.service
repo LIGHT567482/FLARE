@@ -1,0 +1,14 @@
+[Unit]
+Description=FLARE Daemon (flared)
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+Environment=FLARE_DATA_DIR=%h/.flare-data
+ExecStart=/usr/local/bin/flared
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

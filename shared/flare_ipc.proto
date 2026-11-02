@@ -1,0 +1,12 @@
+syntax = "proto3";
+package flare.ipc;
+
+message IpcRequest {
+  string cmd = 1;
+  string payload_json = 2;
+}
+
+message IpcResponse {
+  string payload_json = 1;
+  bool ok = 2;
+}

@@ -1,0 +1,4 @@
+services:
+  devnet:
+    image: alpine:latest
+    command: sleep infinity
