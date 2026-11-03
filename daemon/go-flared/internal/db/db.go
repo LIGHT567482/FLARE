@@ -15,6 +15,7 @@ func Init(path string) error {
 	if err != nil {
 		return err
 	}
+	DB.SetMaxOpenConns(1)
 	_, err = DB.Exec(`PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
@@ -50,5 +51,9 @@ CREATE TABLE IF NOT EXISTS offline_sync_queue (
   last_attempt_at TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );`)
+	if err != nil {
+		return err
+	}
+	_, err = DB.Exec(`UPDATE offline_sync_queue SET status = 0 WHERE status = 1`)
 	return err
 }

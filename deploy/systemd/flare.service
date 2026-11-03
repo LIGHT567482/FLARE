@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=%i
 Environment=FLARE_DATA_DIR=%h/.flare-data
+EnvironmentFile=-%h/.config/flare/daemon.env
 ExecStart=/usr/local/bin/flared
 Restart=always
 RestartSec=3

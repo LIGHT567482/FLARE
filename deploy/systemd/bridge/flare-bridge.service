@@ -6,7 +6,8 @@ After=network.target flare.service
 Type=simple
 User=%i
 WorkingDirectory=%h/FLARE/bridge/python-bridge
-Environment=FLARED_SOCKET=/tmp/flared.sock
+Environment=FLARED_SOCKET=%h/.flare-data/flared.sock
+EnvironmentFile=-%h/.config/flare/bridge.env
 Environment=BRIDGE_HOST=127.0.0.1
 Environment=BRIDGE_PORT=8443
 Environment=TLS_ENABLED=true

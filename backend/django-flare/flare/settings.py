@@ -1,10 +1,19 @@
 from pathlib import Path
 import os
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = 'dev-insecure-flare-local-only'
-DEBUG = True
-ALLOWED_HOSTS = ['*']
+DEBUG = os.environ.get('FLARE_DEBUG', 'true').lower() == 'true'
+SECRET_KEY = os.environ.get('FLARE_SECRET_KEY', '')
+if DEBUG and not SECRET_KEY:
+    SECRET_KEY = 'insecure-development-key-do-not-use-in-production'
+if not SECRET_KEY:
+    raise ImproperlyConfigured('Set FLARE_SECRET_KEY when FLARE_DEBUG is false.')
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('FLARE_ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',')
+    if host.strip()
+]
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -49,3 +58,9 @@ USE_I18N = True
 USE_TZ = True
 STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = not DEBUG
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'

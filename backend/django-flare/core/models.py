@@ -43,3 +43,38 @@ class OfflineSyncQueue(models.Model):
     class Meta:
         db_table = 'offline_sync_queue'
         ordering = ['created_at']
+
+class SyncEvent(models.Model):
+    event_id = models.CharField(primary_key=True, max_length=64)
+    entity_type = models.CharField(max_length=64)
+    entity_id = models.CharField(max_length=128, blank=True)
+    payload_json = models.TextField()
+    created_at = models.DateTimeField()
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'sync_events'
+        ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['entity_type', 'entity_id']),
+        ]
+
+class SyncConflict(models.Model):
+    id = models.CharField(primary_key=True, max_length=64, default=new_id)
+    entity_type = models.CharField(max_length=64)
+    entity_id = models.CharField(max_length=128)
+    first_event_id = models.CharField(max_length=64)
+    second_event_id = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolution_event_id = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        db_table = 'sync_conflicts'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['first_event_id', 'second_event_id'],
+                name='unique_sync_conflict_pair',
+            ),
+        ]
+        ordering = ['created_at']

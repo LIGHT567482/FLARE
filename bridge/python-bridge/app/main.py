@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import json
 import os
 import socket
@@ -6,16 +7,17 @@ import ssl
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-FLARED_SOCKET = os.getenv("FLARED_SOCKET", "/tmp/flared.sock")
+FLARED_SOCKET = os.getenv("FLARED_SOCKET", os.path.expanduser("~/.flare-data/flared.sock"))
 BRIDGE_HOST = os.getenv("BRIDGE_HOST", "127.0.0.1")
 BRIDGE_PORT = int(os.getenv("BRIDGE_PORT", "8443"))
 TLS_CERT = os.getenv("TLS_CERT", "cert.pem")
 TLS_KEY = os.getenv("TLS_KEY", "key.pem")
 TLS_ENABLED = os.getenv("TLS_ENABLED", "true").lower() == "true"
+BRIDGE_AUTH_TOKEN = os.getenv("BRIDGE_AUTH_TOKEN", "")
 MAX_CONCURRENT = int(os.getenv("MAX_CONCURRENT", "100"))
 READ_TIMEOUT = float(os.getenv("READ_TIMEOUT", "5.0"))
 CONNECT_TIMEOUT = float(os.getenv("CONNECT_TIMEOUT", "2.0"))
@@ -28,6 +30,8 @@ class IpcCmd(BaseModel):
     payload: Optional[Dict[str, Any]] = None
     entity_type: Optional[str] = None
     limit: Optional[int] = None
+    conflict_id: Optional[str] = None
+    event_id: Optional[str] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -53,6 +57,15 @@ async def call_flared(cmd: IpcCmd) -> Dict[str, Any]:
         except asyncio.TimeoutError:
             raise HTTPException(status_code=504, detail="bridge_timeout")
 
+def require_bridge_token(authorization: Optional[str]) -> None:
+    if not BRIDGE_AUTH_TOKEN:
+        raise HTTPException(status_code=503, detail="bridge_auth_not_configured")
+    supplied = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not authorization or not authorization.startswith("Bearer ") or not hmac.compare_digest(
+        supplied.encode(), BRIDGE_AUTH_TOKEN.encode()
+    ):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
 def _sync_call(payload: Dict[str, Any]) -> Dict[str, Any]:
     req = {"cmd": payload.get("cmd")}
     if payload.get("payload") is not None:
@@ -61,6 +74,10 @@ def _sync_call(payload: Dict[str, Any]) -> Dict[str, Any]:
         req["entity_type"] = payload["entity_type"]
     if payload.get("limit") is not None:
         req["limit"] = payload["limit"]
+    if payload.get("conflict_id") is not None:
+        req["conflict_id"] = payload["conflict_id"]
+    if payload.get("event_id") is not None:
+        req["event_id"] = payload["event_id"]
     line = json.dumps(req, separators=(",", ":")) + "\n"
     if len(line.encode()) > MAX_LINE_BYTES:
         raise ValueError("request_too_large")
@@ -83,7 +100,8 @@ def _sync_call(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise OSError(str(e))
 
 @app.post("/ipc")
-async def ipc_endpoint(cmd: IpcCmd):
+async def ipc_endpoint(cmd: IpcCmd, authorization: Optional[str] = Header(default=None)):
+    require_bridge_token(authorization)
     try:
         return await call_flared(cmd)
     except OSError as e:
@@ -96,7 +114,8 @@ async def health():
     return {"status": "ok", "flared_socket": FLARED_SOCKET, "tls": TLS_ENABLED}
 
 @app.post("/flare-ipc")
-async def flare_ipc(req: Request):
+async def flare_ipc(req: Request, authorization: Optional[str] = Header(default=None)):
+    require_bridge_token(authorization)
     body = await req.body()
     try:
         payload = json.loads(body.decode())

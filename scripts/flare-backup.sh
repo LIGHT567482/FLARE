@@ -1,29 +1,56 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-USER_HOME=$(eval echo "~$LOGNAME")
-DATA_DIR="${USER_HOME}/.flare-data"
-BACKUP_DIR="${USER_HOME}/flare-backups"
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-BACKUP_FILE="${BACKUP_DIR}/flare_snapshot_${TIMESTAMP}.tar.gz"
+USER_HOME="${HOME:?HOME must be set}"
+DATA_DIR="${FLARE_DATA_DIR:-${USER_HOME}/.flare-data}"
+BACKUP_DIR="${FLARE_BACKUP_DIR:-${USER_HOME}/flare-backups}"
+DB_FILE="${DATA_DIR}/local.db"
+TIMESTAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
 
-mkdir -p "${BACKUP_DIR}"
-
-echo "[*] Creating atomic SQLite online snapshot..."
-if command -v sqlite3 >/dev/null 2>&1 && [ -f "${DATA_DIR}/local.db" ]; then
-  sqlite3 "${DATA_DIR}/local.db" ".backup '${DATA_DIR}/snapshot.db'"
-else
-  cp -f "${DATA_DIR}/local.db" "${DATA_DIR}/snapshot.db" 2>/dev/null || true
+if [[ ! -f "${DB_FILE}" ]]; then
+  echo "FLARE database not found: ${DB_FILE}" >&2
+  exit 1
 fi
 
-echo "[*] Packaging cryptographic keys and database state..."
-tar -czf "${BACKUP_FILE}" \
-  -C "${DATA_DIR}" snapshot.db node_keys.ed25519 node_config.json 2>/dev/null || \
-  tar -czf "${BACKUP_FILE}" -C "${DATA_DIR}" snapshot.db 2>/dev/null || true
+mkdir -p "${DATA_DIR}" "${BACKUP_DIR}"
+chmod 700 "${DATA_DIR}"
+chmod 700 "${BACKUP_DIR}"
+SNAPSHOT_DIR="$(mktemp -d "${DATA_DIR}/.flare-snapshot.XXXXXX")"
+SNAPSHOT="${SNAPSHOT_DIR}/snapshot.db"
+ARCHIVE_TMP="$(mktemp "${BACKUP_DIR}/.flare-backup.XXXXXX")"
+trap 'rm -f -- "${SNAPSHOT}" "${ARCHIVE_TMP}"; rmdir -- "${SNAPSHOT_DIR}"' EXIT
 
-rm -f "${DATA_DIR}/snapshot.db"
+python3 - "${DB_FILE}" "${SNAPSHOT}" <<'PY'
+import sqlite3
+import sys
 
-echo "===================================================="
-echo "  [✓] Offline backup successfully created!"
-echo "  [*] Path: ${BACKUP_FILE}"
-echo "===================================================="
+source = sqlite3.connect(sys.argv[1], timeout=30)
+target = sqlite3.connect(sys.argv[2])
+try:
+    source.backup(target)
+    result = target.execute("PRAGMA integrity_check").fetchone()
+    if result != ("ok",):
+        raise RuntimeError(f"database integrity check failed: {result}")
+finally:
+    target.close()
+    source.close()
+PY
+
+FILES=()
+for name in node_keys.ed25519 node_config.json; do
+  if [[ -f "${DATA_DIR}/${name}" ]]; then
+    FILES+=("${name}")
+  fi
+done
+
+tar -cf "${ARCHIVE_TMP}" -C "${SNAPSHOT_DIR}" snapshot.db
+if [[ ${#FILES[@]} -gt 0 ]]; then
+  tar -rf "${ARCHIVE_TMP}" -C "${DATA_DIR}" "${FILES[@]}"
+fi
+gzip -f "${ARCHIVE_TMP}"
+ARCHIVE_TMP="${ARCHIVE_TMP}.gz"
+chmod 600 "${ARCHIVE_TMP}"
+BACKUP_FILE="${BACKUP_DIR}/flare_snapshot_${TIMESTAMP}.tar.gz"
+mv -- "${ARCHIVE_TMP}" "${BACKUP_FILE}"
+
+echo "FLARE backup created and database integrity verified: ${BACKUP_FILE}"

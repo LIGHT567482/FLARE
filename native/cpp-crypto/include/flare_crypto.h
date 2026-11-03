@@ -9,14 +9,14 @@ typedef struct {
     unsigned char sk[64];
 } flare_keypair_t;
 
-// Ed25519 (stub API)
+// Ed25519 secret keys are stored as the 32-byte seed followed by the 32-byte
+// public key. AES-GCM uses a 12-byte nonce and a 16-byte authentication tag.
 int flare_keygen(flare_keypair_t *kp);
 int flare_sign(const unsigned char *msg, unsigned long long msglen,
                const unsigned char *sk, unsigned char *sig);
 int flare_verify(const unsigned char *msg, unsigned long long msglen,
                  const unsigned char *pk, const unsigned char *sig);
 
-// AES-256-GCM (stub)
 int flare_aes_gcm_encrypt(const unsigned char *key, const unsigned char *nonce,
                           const unsigned char *pt, unsigned long long ptlen,
                           unsigned char *ct, unsigned char *tag);
